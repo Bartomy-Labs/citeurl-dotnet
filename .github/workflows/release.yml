@@ -1,0 +1,39 @@
+name: Release and Publish
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup .NET 9
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x'
+
+    - name: Extract version from tag
+      id: get_version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build
+      run: dotnet build --configuration Release --no-restore /p:Version=${{ steps.get_version.outputs.VERSION }}
+
+    - name: Test
+      run: dotnet test --configuration Release --no-build
+
+    - name: Pack
+      run: dotnet pack --configuration Release --no-build /p:Version=${{ steps.get_version.outputs.VERSION }}
+
+    - name: Publish to NuGet
+      run: |
+        dotnet nuget push src/CiteUrl.Core/bin/Release/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+        dotnet nuget push src/CiteUrl.Extensions.DependencyInjection/bin/Release/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate

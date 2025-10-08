@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/GitRepos/Leash/**)",
+      "Bash(dotnet --version)",
+      "Bash(dotnet new:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
