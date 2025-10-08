@@ -7,31 +7,31 @@
   "git_config": {
     "scope_pattern": ". ':!./.featurePlans/**/ingestion_*'",
     "scope_description": "All files except ingestion_* prefixed",
-    "last_commit_hash": null,
-    "last_commit_timestamp": null
+    "last_commit_hash": "3b20e1978582c533a2b0a664b2af1d4c3f2bad8e",
+    "last_commit_timestamp": "2025-10-07T00:05:00Z"
   },
 
   "task_state": {
     "current_task_id": "1.1",
-    "last_task_status": "not_started",
+    "last_task_status": "completed",
     "task_start_timestamp": "2025-10-07T00:00:00Z",
-    "task_completion_timestamp": null,
+    "task_completion_timestamp": "2025-10-07T00:05:00Z",
     "expected_next_task_id": "1.2",
     "task_directory": "C:\\Users\\tlewers\\source\\repos\\citeurl-dotnet\\.featurePlans\\CiteUrl"
   },
 
   "checkpoint_state": {
     "last_checkpoint_timestamp": null,
-    "tasks_since_checkpoint": 0,
-    "files_read_since_checkpoint": 0,
-    "artifacts_created_since_checkpoint": 0,
-    "conversation_turns_since_checkpoint": 0
+    "tasks_since_checkpoint": 1,
+    "files_read_since_checkpoint": 2,
+    "artifacts_created_since_checkpoint": 8,
+    "conversation_turns_since_checkpoint": 1
   },
 
   "interruption_detection": {
     "auto_compact_count": 0,
-    "last_git_check_timestamp": "2025-10-07T00:00:00Z",
-    "git_state_at_last_check": "has_unstaged",
+    "last_git_check_timestamp": "2025-10-07T00:05:00Z",
+    "git_state_at_last_check": "clean",
     "out_of_scope_warning_shown": false
   },
 
