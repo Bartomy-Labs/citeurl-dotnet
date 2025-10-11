@@ -15,71 +15,105 @@ public class TemplateYaml
     public Dictionary<string, string>? Meta { get; set; }
 
     [YamlMember(Alias = "pattern")]
-    public string? Pattern { get; set; }
+    public object? Pattern { get; set; }
 
     [YamlMember(Alias = "patterns")]
-    public List<string>? Patterns { get; set; }
+    public List<object>? Patterns { get; set; }
 
     [YamlMember(Alias = "broad pattern")]
-    public string? BroadPattern { get; set; }
+    public object? BroadPattern { get; set; }
 
     [YamlMember(Alias = "broad patterns")]
-    public List<string>? BroadPatterns { get; set; }
+    public List<object>? BroadPatterns { get; set; }
 
     [YamlMember(Alias = "shortform pattern")]
-    public string? ShortformPattern { get; set; }
+    public object? ShortformPattern { get; set; }
 
     [YamlMember(Alias = "shortform patterns")]
-    public List<string>? ShortformPatterns { get; set; }
+    public List<object>? ShortformPatterns { get; set; }
 
     [YamlMember(Alias = "idform pattern")]
-    public string? IdformPattern { get; set; }
+    public object? IdformPattern { get; set; }
 
     [YamlMember(Alias = "idform patterns")]
-    public List<string>? IdformPatterns { get; set; }
+    public List<object>? IdformPatterns { get; set; }
 
     [YamlMember(Alias = "URL builder")]
-    public StringBuilderYaml? UrlBuilder { get; set; }
+    public object? UrlBuilder { get; set; }
 
     [YamlMember(Alias = "name builder")]
-    public StringBuilderYaml? NameBuilder { get; set; }
+    public object? NameBuilder { get; set; }
 
     [YamlMember(Alias = "inherit")]
     public string? Inherit { get; set; }
 
     /// <summary>
     /// Combines singular and plural pattern forms.
+    /// Flattens nested lists (e.g., [[a, b], [c, d]] becomes ["ab", "cd"])
     /// </summary>
     public List<string> GetPatterns()
     {
         var result = new List<string>();
-        if (Pattern != null) result.Add(Pattern);
-        if (Patterns != null) result.AddRange(Patterns);
+        if (Pattern != null) result.Add(FlattenPattern(Pattern));
+        if (Patterns != null)
+            result.AddRange(Patterns.Select(FlattenPattern));
         return result;
     }
 
     public List<string> GetBroadPatterns()
     {
         var result = new List<string>();
-        if (BroadPattern != null) result.Add(BroadPattern);
-        if (BroadPatterns != null) result.AddRange(BroadPatterns);
+        if (BroadPattern != null) result.Add(FlattenPattern(BroadPattern));
+        if (BroadPatterns != null)
+            result.AddRange(BroadPatterns.Select(FlattenPattern));
         return result;
     }
 
     public List<string> GetShortformPatterns()
     {
         var result = new List<string>();
-        if (ShortformPattern != null) result.Add(ShortformPattern);
-        if (ShortformPatterns != null) result.AddRange(ShortformPatterns);
+        if (ShortformPattern != null) result.Add(FlattenPattern(ShortformPattern));
+        if (ShortformPatterns != null)
+            result.AddRange(ShortformPatterns.Select(FlattenPattern));
         return result;
     }
 
     public List<string> GetIdformPatterns()
     {
         var result = new List<string>();
-        if (IdformPattern != null) result.Add(IdformPattern);
-        if (IdformPatterns != null) result.AddRange(IdformPatterns);
+        if (IdformPattern != null) result.Add(FlattenPattern(IdformPattern));
+        if (IdformPatterns != null)
+            result.AddRange(IdformPatterns.Select(FlattenPattern));
         return result;
+    }
+
+    /// <summary>
+    /// Flattens a pattern that may be a string or nested list into a single string.
+    /// Examples:
+    ///   "foo" -> "foo"
+    ///   ["foo", "bar"] -> "foobar"
+    ///   [["a", "b"], "c"] -> "abc" (recursively flattens)
+    /// </summary>
+    private static string FlattenPattern(object pattern)
+    {
+        if (pattern is string s)
+            return s;
+
+        if (pattern is List<object> list)
+            return string.Concat(list.Select(FlattenPattern));
+
+        // Handle cases where YAML parser returns IList or IEnumerable
+        if (pattern is System.Collections.IEnumerable enumerable and not string)
+        {
+            var parts = new List<string>();
+            foreach (var item in enumerable)
+            {
+                parts.Add(FlattenPattern(item));
+            }
+            return string.Concat(parts);
+        }
+
+        return pattern?.ToString() ?? string.Empty;
     }
 }
 
@@ -112,10 +146,10 @@ public class TokenTypeYaml
 public class StringBuilderYaml
 {
     [YamlMember(Alias = "part")]
-    public string? Part { get; set; }
+    public object? Part { get; set; }
 
     [YamlMember(Alias = "parts")]
-    public List<string>? Parts { get; set; }
+    public List<object>? Parts { get; set; }
 
     [YamlMember(Alias = "edit")]
     public object? Edit { get; set; }
@@ -126,8 +160,9 @@ public class StringBuilderYaml
     public List<string> GetParts()
     {
         var result = new List<string>();
-        if (Part != null) result.Add(Part);
-        if (Parts != null) result.AddRange(Parts);
+        if (Part != null) result.Add(ConvertToString(Part));
+        if (Parts != null)
+            result.AddRange(Parts.Select(ConvertToString));
         return result;
     }
 
@@ -137,5 +172,12 @@ public class StringBuilderYaml
         if (Edit != null) result.Add(Edit);
         if (Edits != null) result.AddRange(Edits);
         return result;
+    }
+
+    private static string ConvertToString(object obj)
+    {
+        if (obj is string s)
+            return s;
+        return obj?.ToString() ?? string.Empty;
     }
 }

@@ -29,6 +29,7 @@ public static class YamlLoader
             // Deserialize YAML to intermediate models
             var deserializer = new DeserializerBuilder()
                 .WithNamingConvention(NullNamingConvention.Instance)
+                .IgnoreUnmatchedProperties()
                 .Build();
 
             var yamlTemplates = deserializer.Deserialize<Dictionary<string, TemplateYaml>>(yamlContent);
@@ -44,8 +45,9 @@ public static class YamlLoader
         catch (YamlDotNet.Core.YamlException ex)
         {
             Logger?.Error(ex, "YAML parsing failed for {FileName}", fileName ?? "<unknown>");
+            var innerMsg = ex.InnerException != null ? $" Inner: {ex.InnerException.Message}" : "";
             throw new CiteUrlYamlException(
-                $"YAML parsing error: {ex.Message}",
+                $"YAML parsing error: {ex.Message}{innerMsg}",
                 fileName,
                 (int)ex.Start.Line);
         }
@@ -56,8 +58,10 @@ public static class YamlLoader
         catch (Exception ex)
         {
             Logger?.Error(ex, "Unexpected error loading YAML from {FileName}", fileName ?? "<unknown>");
+            var innerMsg = ex.InnerException != null ? $" Inner: {ex.InnerException.Message}" : "";
+            var stackTrace = ex.StackTrace != null ? $"\nStack: {ex.StackTrace.Substring(0, Math.Min(200, ex.StackTrace.Length))}" : "";
             throw new CiteUrlYamlException(
-                $"Error loading templates: {ex.Message}",
+                $"Error loading templates: {ex.Message}{innerMsg}{stackTrace}",
                 fileName);
         }
     }
@@ -146,11 +150,11 @@ public static class YamlLoader
 
         // Convert builders
         var urlBuilder = yaml.UrlBuilder != null
-            ? ConvertStringBuilder(yaml.UrlBuilder, isUrl: true)
+            ? ConvertStringBuilderObject(yaml.UrlBuilder, isUrl: true)
             : null;
 
         var nameBuilder = yaml.NameBuilder != null
-            ? ConvertStringBuilder(yaml.NameBuilder, isUrl: false)
+            ? ConvertStringBuilderObject(yaml.NameBuilder, isUrl: false)
             : null;
 
         // If parent exists, use inheritance
@@ -210,7 +214,7 @@ public static class YamlLoader
 
             if (strDict.ContainsKey("sub"))
             {
-                var subData = (List<object>)strDict["sub"];
+                var subData = EnsureList(strDict["sub"]);
                 return new TokenOperation
                 {
                     Action = TokenOperationAction.Sub,
@@ -247,28 +251,141 @@ public static class YamlLoader
 
             if (strDict.ContainsKey("lpad"))
             {
-                var lpadData = (List<object>)strDict["lpad"];
-                return new TokenOperation
+                var lpadData = EnsureList(strDict["lpad"]);
+                // lpad can be a single int (width) or [char, width]
+                if (lpadData.Count == 1)
                 {
-                    Action = TokenOperationAction.LeftPad,
-                    Data = (lpadData[0].ToString()![0], Convert.ToInt32(lpadData[1])),
-                    Token = strDict.GetValueOrDefault("token")?.ToString()
-                };
+                    // Single value means width with '0' as padding char
+                    return new TokenOperation
+                    {
+                        Action = TokenOperationAction.LeftPad,
+                        Data = ('0', Convert.ToInt32(lpadData[0])),
+                        Token = strDict.GetValueOrDefault("token")?.ToString()
+                    };
+                }
+                else
+                {
+                    return new TokenOperation
+                    {
+                        Action = TokenOperationAction.LeftPad,
+                        Data = (lpadData[0].ToString()![0], Convert.ToInt32(lpadData[1])),
+                        Token = strDict.GetValueOrDefault("token")?.ToString()
+                    };
+                }
             }
 
-            if (strDict.ContainsKey("number_style"))
+            if (strDict.ContainsKey("number_style") || strDict.ContainsKey("number style"))
             {
-                var nsData = (List<object>)strDict["number_style"];
-                return new TokenOperation
+                var key = strDict.ContainsKey("number_style") ? "number_style" : "number style";
+                var nsValue = strDict[key];
+
+                // Handle both "number style: digit" and "number style: [from, to]"
+                if (nsValue is List<object> || (nsValue is System.Collections.IEnumerable and not string))
                 {
-                    Action = TokenOperationAction.NumberStyle,
-                    Data = (nsData[0].ToString()!, nsData[1].ToString()!),
-                    Token = strDict.GetValueOrDefault("token")?.ToString()
-                };
+                    var nsData = EnsureList(nsValue);
+                    return new TokenOperation
+                    {
+                        Action = TokenOperationAction.NumberStyle,
+                        Data = (nsData[0].ToString()!, nsData[1].ToString()!),
+                        Token = strDict.GetValueOrDefault("token")?.ToString()
+                    };
+                }
+                else
+                {
+                    // Single value means target style only (e.g., "digit", "roman")
+                    return new TokenOperation
+                    {
+                        Action = TokenOperationAction.NumberStyle,
+                        Data = ("detect", nsValue.ToString()!),  // Auto-detect source format
+                        Token = strDict.GetValueOrDefault("token")?.ToString()
+                    };
+                }
             }
         }
 
-        throw new InvalidOperationException($"Unknown edit operation format: {editObj}");
+        var keys = editObj is Dictionary<object, object> d
+            ? string.Join(", ", d.Keys.Select(k => k?.ToString() ?? "null"))
+            : "not a dictionary";
+        throw new InvalidOperationException($"Unknown edit operation format: {editObj?.GetType().Name ?? "null"}. Keys: {keys}");
+    }
+
+    /// <summary>
+    /// Ensures a value is a list. If it's already a list, returns it. Otherwise, wraps it in a list.
+    /// </summary>
+    private static List<object> EnsureList(object value)
+    {
+        if (value is List<object> list)
+            return list;
+        if (value is System.Collections.IEnumerable enumerable and not string)
+        {
+            var result = new List<object>();
+            foreach (var item in enumerable)
+                result.Add(item);
+            return result;
+        }
+        // Single value - wrap it
+        return new List<object> { value };
+    }
+
+    private static CiteUrl.Core.Tokens.StringBuilder? ConvertStringBuilderObject(
+        object builderObj,
+        bool isUrl)
+    {
+        // Handle simple string builders
+        if (builderObj is string simpleString)
+        {
+            return new CiteUrl.Core.Tokens.StringBuilder
+            {
+                Parts = new List<string> { simpleString },
+                Edits = new List<TokenOperation>(),
+                UrlEncode = isUrl
+            };
+        }
+
+        // Handle StringBuilderYaml objects
+        if (builderObj is StringBuilderYaml yaml)
+        {
+            return ConvertStringBuilder(yaml, isUrl);
+        }
+
+        // Handle dictionary representation (from YAML deserialization)
+        if (builderObj is Dictionary<object, object> dict)
+        {
+            var yamlBuilder = new StringBuilderYaml();
+
+            if (dict.ContainsKey("part"))
+                yamlBuilder.Part = dict["part"];
+            if (dict.ContainsKey("parts"))
+            {
+                var parts = dict["parts"];
+                if (parts is List<object> list)
+                    yamlBuilder.Parts = list;
+                else if (parts is System.Collections.IEnumerable enumerable and not string)
+                {
+                    yamlBuilder.Parts = new List<object>();
+                    foreach (var item in enumerable)
+                        yamlBuilder.Parts.Add(item);
+                }
+            }
+            if (dict.ContainsKey("edit"))
+                yamlBuilder.Edit = dict["edit"];
+            if (dict.ContainsKey("edits"))
+            {
+                var edits = dict["edits"];
+                if (edits is List<object> list)
+                    yamlBuilder.Edits = list;
+                else if (edits is System.Collections.IEnumerable enumerable and not string)
+                {
+                    yamlBuilder.Edits = new List<object>();
+                    foreach (var item in enumerable)
+                        yamlBuilder.Edits.Add(item);
+                }
+            }
+
+            return ConvertStringBuilder(yamlBuilder, isUrl);
+        }
+
+        return null;
     }
 
     private static CiteUrl.Core.Tokens.StringBuilder ConvertStringBuilder(
