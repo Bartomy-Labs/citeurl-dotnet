@@ -54,4 +54,15 @@ public interface ICitator
         Regex? idBreaks = null,
         bool ignoreMarkup = true,
         string markupFormat = "html");
+
+    /// <summary>
+    /// Groups citations by their core tokens, creating Authority records.
+    /// Returns a streaming enumerable for memory efficiency.
+    /// </summary>
+    /// <param name="citations">Citations to group into authorities.</param>
+    /// <param name="ignoredTokens">Token names to ignore when grouping.</param>
+    /// <param name="sortByCites">If true, sorts by citation count (most cited first).</param>
+    /// <returns>Streaming enumerable of Authority records.</returns>
+    IEnumerable<Authority> ListAuthorities(IEnumerable<Citation> citations,
+        IEnumerable<string>? ignoredTokens = null, bool sortByCites = true);
 }

@@ -177,6 +177,52 @@ public class Citator : ICitator
     }
 
     /// <summary>
+    /// Groups citations by their core tokens, creating Authority records.
+    /// Returns streaming enumerable for memory efficiency.
+    /// </summary>
+    public IEnumerable<Authority> ListAuthorities(IEnumerable<Citation> citations,
+        IEnumerable<string>? ignoredTokens = null, bool sortByCites = true)
+    {
+        var ignored = ignoredTokens?.ToHashSet() ?? new HashSet<string>();
+        var authorities = new List<Authority>();
+
+        foreach (var citation in citations)
+        {
+            var coreTokens = citation.Tokens
+                .Where(kv => !ignored.Contains(kv.Key))
+                .Where(kv => !citation.Template.Tokens[kv.Key].IsSeverable ||
+                             citation.Parent == null)
+                .ToImmutableDictionary();
+
+            var existing = authorities.FirstOrDefault(a =>
+                a.Template.Name == citation.Template.Name &&
+                a.Tokens.SequenceEqual(coreTokens));
+
+            if (existing != null)
+            {
+                existing.Citations.Add(citation);
+            }
+            else
+            {
+                authorities.Add(new Authority
+                {
+                    Template = citation.Template,
+                    Tokens = coreTokens,
+                    Citations = new List<Citation> { citation },
+                    IgnoredTokens = ignored.ToArray()
+                });
+            }
+        }
+
+        if (sortByCites)
+        {
+            authorities = authorities.OrderByDescending(a => a.Citations.Count).ToList();
+        }
+
+        return authorities;
+    }
+
+    /// <summary>
     /// Inserts hyperlinks for all citations in the text.
     /// Implementation deferred to Task 4.1.
     /// </summary>
@@ -212,5 +258,17 @@ public class Citator : ICitator
         Regex? idBreaks = null)
     {
         return (citator ?? Default).ListCitations(text, idBreaks);
+    }
+
+    /// <summary>
+    /// Static convenience method for listing all authorities from text.
+    /// Uses Default instance if citator not provided.
+    /// </summary>
+    public static IEnumerable<Authority> ListAuthorities(string text, ICitator? citator = null,
+        IEnumerable<string>? ignoredTokens = null)
+    {
+        var c = citator ?? Default;
+        var citations = c.ListCitations(text);
+        return c.ListAuthorities(citations, ignoredTokens);
     }
 }
