@@ -1,0 +1,216 @@
+using System.Collections.Immutable;
+using System.Text.RegularExpressions;
+using CiteUrl.Core.Models;
+using CiteUrl.Core.Utilities;
+using CiteUrl.Core.Exceptions;
+using Serilog;
+
+namespace CiteUrl.Core.Templates;
+
+/// <summary>
+/// Main citation extraction orchestrator.
+/// Thread-safe immutable design with lazy singleton (Gap Decisions #2, #3).
+/// </summary>
+public class Citator : ICitator
+{
+    private static readonly ILogger? Logger = Log.Logger;
+    private static readonly Lazy<Citator> _default = new(() => CreateDefault(), isThreadSafe: true);
+
+    /// <summary>
+    /// Default singleton instance with embedded YAML templates.
+    /// Thread-safe lazy initialization.
+    /// </summary>
+    public static Citator Default => _default.Value;
+
+    /// <summary>
+    /// Immutable dictionary of templates keyed by name.
+    /// Thread-safe for concurrent access (Gap Decision #2).
+    /// </summary>
+    public ImmutableDictionary<string, Template> Templates { get; init; }
+
+    /// <summary>
+    /// Regex timeout for pattern matching.
+    /// </summary>
+    public TimeSpan RegexTimeout { get; init; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// Constructor with custom templates.
+    /// </summary>
+    public Citator(ImmutableDictionary<string, Template> templates, TimeSpan? regexTimeout = null)
+    {
+        Templates = templates;
+        RegexTimeout = regexTimeout ?? TimeSpan.FromSeconds(1);
+    }
+
+    /// <summary>
+    /// Creates default instance with embedded YAML templates.
+    /// </summary>
+    private static Citator CreateDefault()
+    {
+        try
+        {
+            var yaml = ResourceLoader.LoadAllDefaultYaml();
+            var templates = YamlLoader.LoadYaml(yaml, "default-templates");
+            Logger?.Information("Loaded {TemplateCount} default templates", templates.Count);
+            return new Citator(templates.ToImmutableDictionary());
+        }
+        catch (Exception ex)
+        {
+            Logger?.Error(ex, "Failed to load default templates");
+            throw new CiteUrlYamlException("Failed to initialize default Citator", ex);
+        }
+    }
+
+    /// <summary>
+    /// Creates Citator from YAML string.
+    /// </summary>
+    public static Citator FromYaml(string yaml, string? fileName = null)
+    {
+        var templates = YamlLoader.LoadYaml(yaml, fileName);
+        return new Citator(templates.ToImmutableDictionary());
+    }
+
+    /// <summary>
+    /// Finds the first citation in the text.
+    /// </summary>
+    public Citation? Cite(string text, bool broad = true)
+    {
+        return this.ListCitations(text).FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Finds all citations in the text, including shortforms and idforms.
+    /// Returns streaming enumerable (Gap Decision #6).
+    /// </summary>
+    public IEnumerable<Citation> ListCitations(string text, Regex? idBreaks = null)
+    {
+        var citations = new List<Citation>();
+
+        // Find all longform citations from all templates
+        foreach (var template in Templates.Values)
+        {
+            var regexes = template.BroadRegexes.Concat(template.Regexes);
+
+            foreach (var regex in regexes)
+            {
+                try
+                {
+                    foreach (Match match in regex.Matches(text))
+                    {
+                        var citation = Citation.FromMatch(match, template, text, null, RegexTimeout);
+                        citations.Add(citation);
+                    }
+                }
+                catch (RegexMatchTimeoutException)
+                {
+                    Logger?.Warning("Regex timeout for template {TemplateName}: {Pattern}",
+                        template.Name, regex.ToString());
+                }
+            }
+        }
+
+        // Sort by position
+        citations = citations.OrderBy(c => c.Span.Start).ToList();
+
+        // Remove overlapping citations (prefer longer match)
+        citations = RemoveOverlaps(citations);
+
+        // Find shortforms and idforms for each citation
+        foreach (var citation in citations)
+        {
+            // Yield longform
+            yield return citation;
+
+            // Find idform chain
+            var current = citation;
+            while (true)
+            {
+                var nextCitationStart = citations
+                    .Where(c => c.Span.Start > current.Span.End)
+                    .Select(c => (int?)c.Span.Start)
+                    .FirstOrDefault();
+
+                var idform = current.GetIdformCitation(nextCitationStart);
+                if (idform == null)
+                    break;
+
+                yield return idform;
+                current = idform;
+
+                // Check for id break
+                if (idBreaks != null && current.Span.End < text.Length)
+                {
+                    var remainingText = text.Substring(current.Span.End);
+                    if (idBreaks.IsMatch(remainingText))
+                        break;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Removes overlapping citations, preferring longer matches.
+    /// </summary>
+    private List<Citation> RemoveOverlaps(List<Citation> citations)
+    {
+        var result = new List<Citation>();
+        Citation? last = null;
+
+        foreach (var citation in citations)
+        {
+            if (last == null || citation.Span.Start >= last.Span.End)
+            {
+                // No overlap
+                result.Add(citation);
+                last = citation;
+            }
+            else if (citation.Text.Length > last.Text.Length)
+            {
+                // Current is longer, replace last
+                result[result.Count - 1] = citation;
+                last = citation;
+            }
+            // else: last is longer or equal, keep it
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Inserts hyperlinks for all citations in the text.
+    /// Implementation deferred to Task 4.1.
+    /// </summary>
+    public string InsertLinks(
+        string text,
+        Dictionary<string, string>? attrs = null,
+        bool addTitle = true,
+        bool urlOptional = false,
+        bool redundantLinks = true,
+        Regex? idBreaks = null,
+        bool ignoreMarkup = true,
+        string markupFormat = "html")
+    {
+        throw new NotImplementedException("InsertLinks will be implemented in Task 4.1");
+    }
+
+    /// <summary>
+    /// Static convenience method for finding first citation.
+    /// Uses Default instance if citator not provided.
+    /// </summary>
+    public static Citation? Cite(string text, bool broad = true, ICitator? citator = null)
+    {
+        return (citator ?? Default).Cite(text, broad);
+    }
+
+    /// <summary>
+    /// Static convenience method for listing all citations.
+    /// Uses Default instance if citator not provided.
+    /// </summary>
+    public static IEnumerable<Citation> ListCitations(
+        string text,
+        ICitator? citator = null,
+        Regex? idBreaks = null)
+    {
+        return (citator ?? Default).ListCitations(text, idBreaks);
+    }
+}
