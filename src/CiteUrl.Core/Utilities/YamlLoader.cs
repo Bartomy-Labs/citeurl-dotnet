@@ -28,7 +28,7 @@ public static class YamlLoader
         {
             // Deserialize YAML to intermediate models
             var deserializer = new DeserializerBuilder()
-                .WithNamingConvention(UnderscoredNamingConvention.Instance)
+                .WithNamingConvention(NullNamingConvention.Instance)
                 .Build();
 
             var yamlTemplates = deserializer.Deserialize<Dictionary<string, TemplateYaml>>(yamlContent);
