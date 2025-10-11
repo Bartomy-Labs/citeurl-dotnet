@@ -224,8 +224,17 @@ public class Citator : ICitator
 
     /// <summary>
     /// Inserts hyperlinks for all citations in the text.
-    /// Implementation deferred to Task 4.1.
+    /// Supports HTML and Markdown formats with configurable attributes.
     /// </summary>
+    /// <param name="text">Text containing citations.</param>
+    /// <param name="attrs">Optional HTML attributes (default: class="citation").</param>
+    /// <param name="addTitle">If true, adds title attribute with citation name.</param>
+    /// <param name="urlOptional">If true, includes citations without URLs.</param>
+    /// <param name="redundantLinks">If true, links repeated URLs.</param>
+    /// <param name="idBreaks">Optional regex to break idform chains.</param>
+    /// <param name="ignoreMarkup">If true, preserves inline markup (future enhancement).</param>
+    /// <param name="markupFormat">Format: "html" or "markdown".</param>
+    /// <returns>Text with hyperlinks inserted.</returns>
     public string InsertLinks(
         string text,
         Dictionary<string, string>? attrs = null,
@@ -236,7 +245,89 @@ public class Citator : ICitator
         bool ignoreMarkup = true,
         string markupFormat = "html")
     {
-        throw new NotImplementedException("InsertLinks will be implemented in Task 4.1");
+        var citations = ListCitations(text, idBreaks).ToList();
+        if (citations.Count == 0)
+            return text;
+
+        var result = new System.Text.StringBuilder(text);
+        var offset = 0;
+        string? lastUrl = null;
+
+        foreach (var citation in citations)
+        {
+            // Skip citations without URLs unless urlOptional is true
+            if (citation.Url == null && !urlOptional)
+                continue;
+
+            // Skip redundant links if not allowed
+            if (!redundantLinks && citation.Url == lastUrl)
+                continue;
+
+            // Build link based on format
+            var link = markupFormat.ToLower() == "markdown"
+                ? BuildMarkdownLink(citation)
+                : BuildHtmlLink(citation, attrs, addTitle);
+
+            // Replace citation text with link, tracking offset
+            var start = citation.Span.Start + offset;
+            result.Remove(start, citation.Text.Length);
+            result.Insert(start, link);
+            offset += link.Length - citation.Text.Length;
+            lastUrl = citation.Url;
+        }
+
+        return result.ToString();
+    }
+
+    /// <summary>
+    /// Builds an HTML link for a citation.
+    /// </summary>
+    private string BuildHtmlLink(Citation citation, Dictionary<string, string>? attrs, bool addTitle)
+    {
+        // Build attributes string
+        var attrList = new List<string>();
+
+        if (attrs != null && attrs.Count > 0)
+        {
+            foreach (var kv in attrs)
+            {
+                attrList.Add($"{kv.Key}=\"{kv.Value}\"");
+            }
+        }
+        else
+        {
+            attrList.Add("class=\"citation\"");
+        }
+
+        // Add title attribute if requested and name is available
+        if (addTitle && citation.Name != null)
+        {
+            attrList.Add($"title=\"{EscapeHtml(citation.Name)}\"");
+        }
+
+        var attrStr = string.Join(" ", attrList);
+        return $"<a href=\"{citation.Url}\" {attrStr}>{EscapeHtml(citation.Text)}</a>";
+    }
+
+    /// <summary>
+    /// Builds a Markdown link for a citation.
+    /// </summary>
+    private string BuildMarkdownLink(Citation citation)
+    {
+        return $"[{citation.Text}]({citation.Url})";
+    }
+
+    /// <summary>
+    /// Escapes HTML special characters.
+    /// </summary>
+    private string EscapeHtml(string text)
+    {
+        return text
+            .Replace("&", "&amp;")
+            .Replace("<", "&lt;")
+            .Replace(">", "&gt;")
+            .Replace("\"", "&quot;")
+            .Replace("'", "&#39;");
     }
 
     /// <summary>
