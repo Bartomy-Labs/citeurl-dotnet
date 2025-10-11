@@ -158,11 +158,13 @@ public class Template
         result = tokenPattern.Replace(result, match =>
         {
             var tokenName = match.Groups[1].Value;
+            // Normalize token name: replace spaces with underscores (matches Python behavior)
+            var normalizedTokenName = tokenName.Replace(' ', '_');
 
-            if (replacements.TryGetValue(tokenName, out var regex))
+            if (replacements.TryGetValue(normalizedTokenName, out var regex))
             {
-                // Use .NET named group syntax
-                return $"(?<{tokenName}>{regex})(?!\\w)";
+                // Use .NET named group syntax with normalized name (no spaces allowed in regex group names)
+                return $"(?<{normalizedTokenName}>{regex})(?!\\w)";
             }
 
             // If not found in replacements, leave as-is

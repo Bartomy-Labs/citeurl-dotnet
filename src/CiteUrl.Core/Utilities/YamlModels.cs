@@ -1,6 +1,97 @@
 using YamlDotNet.Serialization;
+using YamlDotNet.Core;
+using YamlDotNet.Core.Events;
 
 namespace CiteUrl.Core.Utilities;
+
+/// <summary>
+/// Custom YAML converter that handles tokens defined as simple strings or as TokenTypeYaml objects.
+/// Example: "volume: \d+" becomes TokenTypeYaml { Regex = "\d+" }
+/// </summary>
+public class TokenTypeYamlConverter : IYamlTypeConverter
+{
+    public bool Accepts(Type type)
+    {
+        return type == typeof(TokenTypeYaml);
+    }
+
+    public object ReadYaml(IParser parser, Type type, ObjectDeserializer rootDeserializer)
+    {
+        // Try to read as scalar (simple string regex)
+        if (parser.Current is Scalar scalar)
+        {
+            var regexValue = scalar.Value;
+            parser.MoveNext();
+            return new TokenTypeYaml { Regex = regexValue };
+        }
+
+        // Otherwise manually deserialize the mapping
+        if (parser.TryConsume<MappingStart>(out _))
+        {
+            var result = new TokenTypeYaml();
+
+            while (!parser.TryConsume<MappingEnd>(out _))
+            {
+                var key = parser.Consume<Scalar>();
+                var keyName = key.Value;
+
+                if (keyName == "regex")
+                {
+                    var value = parser.Consume<Scalar>();
+                    result.Regex = value.Value;
+                }
+                else if (keyName == "default")
+                {
+                    var value = parser.Consume<Scalar>();
+                    result.Default = value.Value;
+                }
+                else if (keyName == "severable")
+                {
+                    var value = parser.Consume<Scalar>();
+                    result.Severable = ParseYamlBoolean(value.Value);
+                }
+                else if (keyName == "edit")
+                {
+                    // Use rootDeserializer for complex objects, but not for TokenTypeYaml
+                    result.Edit = rootDeserializer(typeof(object));
+                }
+                else if (keyName == "edits")
+                {
+                    result.Edits = (List<object>)rootDeserializer(typeof(List<object>));
+                }
+                else
+                {
+                    // Skip unknown keys
+                    parser.SkipThisAndNestedEvents();
+                }
+            }
+
+            return result;
+        }
+
+        throw new InvalidOperationException($"Unexpected YAML structure for TokenTypeYaml");
+    }
+
+    public void WriteYaml(IEmitter emitter, object? value, Type type, ObjectSerializer serializer)
+    {
+        // We don't need to implement serialization for this use case
+        throw new NotImplementedException("TokenTypeYaml serialization is not implemented");
+    }
+
+    /// <summary>
+    /// Parses YAML boolean values (yes/no/true/false/on/off) to .NET boolean
+    /// </summary>
+    private static bool ParseYamlBoolean(string value)
+    {
+        var normalized = value.ToLowerInvariant();
+        return normalized switch
+        {
+            "yes" or "true" or "on" => true,
+            "no" or "false" or "off" => false,
+            _ => throw new ArgumentException($"Cannot parse '{value}' as boolean")
+        };
+    }
+}
 
 /// <summary>
 /// YAML deserialization model for templates.

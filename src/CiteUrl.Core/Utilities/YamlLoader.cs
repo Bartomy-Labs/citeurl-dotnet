@@ -29,6 +29,7 @@ public static class YamlLoader
             // Deserialize YAML to intermediate models
             var deserializer = new DeserializerBuilder()
                 .WithNamingConvention(NullNamingConvention.Instance)
+                .WithTypeConverter(new TokenTypeYamlConverter())
                 .IgnoreUnmatchedProperties()
                 .Build();
 
@@ -143,9 +144,9 @@ public static class YamlLoader
             }
         }
 
-        // Convert metadata
+        // Convert metadata - replace spaces with underscores in keys (matches Python behavior)
         var metadata = yaml.Meta != null
-            ? yaml.Meta.ToImmutableDictionary()
+            ? yaml.Meta.ToDictionary(kv => kv.Key.Replace(' ', '_'), kv => kv.Value).ToImmutableDictionary()
             : ImmutableDictionary<string, string>.Empty;
 
         // Convert builders
