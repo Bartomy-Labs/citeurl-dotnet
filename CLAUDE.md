@@ -10,6 +10,12 @@ CiteUrl.NET is a C# port of the Python [citeurl](https://github.com/raindrum/cit
 
 **Python Reference**: The original Python implementation is located at `C:\Users\tlewers\source\repos\citeurl` and can be used as a reference for understanding expected behavior, YAML template formats, and bug fixes. When encountering ambiguities or bugs, always consult the Python version first.
 
+**API Naming Conventions**: Python uses `snake_case` while C# follows .NET conventions with `PascalCase`. Key method mappings:
+- Python `list_cites()` → C# `ListCitations()`
+- Python `list_authorities()` → C# `ListAuthorities()`
+- Python `insert_links()` → C# `InsertLinks()`
+- Python `cite()` → C# `Cite()`
+
 ## Build and Test Commands
 
 ### Building
