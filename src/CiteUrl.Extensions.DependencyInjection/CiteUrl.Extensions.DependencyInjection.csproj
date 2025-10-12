@@ -8,7 +8,7 @@
 
     <!-- NuGet Package Metadata -->
     <PackageId>CiteUrl.Extensions.DependencyInjection</PackageId>
-    <Version>1.0.0-alpha.1</Version>
+    <Version>1.0.0</Version>
     <Description>Dependency injection extensions for CiteUrl.Core library</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
